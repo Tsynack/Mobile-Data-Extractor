@@ -87,7 +87,11 @@ def extract_ios_files(path, output_dir, ssh, label):
                 
             print(f"    [*] Extracting files locally...")
             with tarfile.open(local_tar_path, "r:") as tar:
-                tar.extractall(path=local_extraction_root, filter="data")
+                if hasattr(tarfile, 'data_filter'):
+                    tar.extractall(path=local_extraction_root, filter="data")
+                else:
+                    # Fallback for older Python versions
+                    tar.extractall(path=local_extraction_root)
             
             actual_local_files = os.path.join(local_extraction_root, folder_name)
             print(f"        [+] Extraction successful: {actual_local_files}")
