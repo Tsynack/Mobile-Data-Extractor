@@ -87,10 +87,10 @@ def extract_ios_files(path, output_dir, ssh, label):
                 
             print(f"    [*] Extracting files locally...")
             with tarfile.open(local_tar_path, "r:") as tar:
-                tar.extractall(path=local_extraction_root)
+                tar.extractall(path=local_extraction_root, filter="data")
             
             actual_local_files = os.path.join(local_extraction_root, folder_name)
-            print(f"    [+] Extraction successful: {actual_local_files}")
+            print(f"        [+] Extraction successful: {actual_local_files}")
 
             ssh.exec_command(f"rm {remote_tmp_path}")
             
@@ -135,7 +135,7 @@ def parse_plists(scan_dir, log_dir):
                     convert_plistXML(file_path)
                 except: continue
 
-    print(f"    [+] Plists processed. Log: {log_file}")
+    print(f"        [+] Plists processed. Log: {log_file}")
 
 def convert_plistXML(file_path):
     def patch_uid(obj):
@@ -248,6 +248,51 @@ def raw_byte_scan(file_path, log_file, log_dir):
                     f_log.write(out_name + "\n")
             except: continue
     except: pass
+
+def db_extract_plists(output_dir, log_file):
+    new_folder = os.path.join(output_dir, "db_extracted_plists")
+    os.makedirs(new_folder, exist_ok=True)
+    
+    with open(log_file, "r", encoding="utf-8") as f:
+        for line in f:
+            relative_path = line.strip()
+            # Construct the absolute path to the local extracted file
+            file_path = os.path.join(output_dir, relative_path)
+            
+            if not os.path.exists(file_path):
+                print(f"    [!] File not found: {file_path}")
+                continue
+
+            base_name = os.path.basename(file_path)
+            output_subdir = os.path.join(new_folder, f"{base_name}_plists")
+            os.makedirs(output_subdir, exist_ok=True)
+            try:
+                conn = sqlite3.connect(file_path)
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+                tables = cursor.fetchall()
+                for table_name in tables:
+                    table = table_name[0]
+                    cursor.execute(f"PRAGMA table_info('{table}');")
+                    columns = cursor.fetchall()
+                    for column in columns:
+                        col_name = column[1]
+                        cursor.execute(f"SELECT {col_name} FROM {table};")
+                        rows = cursor.fetchall()
+                        for idx, row in enumerate(rows):
+                            data = row[0]
+                            if isinstance(data, bytes) and data.startswith(b'bplist00'):
+                                try:
+                                    plist_data = plistlib.loads(data)
+                                    out_name = os.path.join(output_subdir, f"{table}_{col_name}_row{idx+1}.plist")
+                                    with open(out_name, 'wb') as out_f:
+                                        plistlib.dump(plist_data, out_f, fmt=plistlib.FMT_XML)
+                                except Exception:
+                                    continue
+                conn.close()
+            except Exception as e:
+                print(f"         [!] Failed to extract plists from {file_path}: {e}")
+        print(f"        [+] Extracted plists from DB to: {new_folder}")
 
 def enumerate_db(scan_dir, log_dir):
     log_file = os.path.join(log_dir, "DB_files.txt")
