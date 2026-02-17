@@ -115,33 +115,47 @@ def extract_ios_files(path, output_dir, ssh, label):
         print(f"    [!] Extraction failed: {e}")
 
 def parse_plists(scan_dir, log_dir):
-    log_file = os.path.join(log_dir, "plist_files.txt")
-    
-    for root, dirs, files in os.walk(scan_dir):
-        for file in files:
-            file_path = os.path.join(root, file)
-            is_plist = file.endswith('.plist')
-            
-            if not is_plist:
-                try:
-                    with open(file_path, 'rb') as f:
-                        header = f.read(8)
-                        if header.startswith(b'bplist') or header.startswith(b'<?xml'):
-                            is_plist = True
-                except: continue
+    log_file_path = os.path.join(log_dir, "plist_files.txt")
 
-            if is_plist:
-                rel_path = os.path.relpath(file_path, log_dir)
+    with open(log_file_path, "a", encoding="utf-8") as f_log:
+        for root, dirs, files in os.walk(scan_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                
+                is_binary = False
+                is_xml_plist = False
                 
                 try:
-                    with open(log_file, "a", encoding="utf-8") as f_log:
-                        f_log.write(rel_path + "\n")
-                    
-                    extract_embedded_plists(file_path, log_file, log_dir)
-                    convert_plistXML(file_path)
-                except: continue
+                    with open(file_path, 'rb') as f:
+                        chunk = f.read(200)
+                        
+                        if chunk.startswith(b'bplist'):
+                            is_binary = True
+                        elif b'<?xml' in chunk and (b'<plist' in chunk or b'apple.com/DTDs/PropertyList' in chunk):
+                            is_xml_plist = True
+                        elif file.endswith('.plist'):
+                            # Decide here if you trust the extension or want to be strict
+                            is_xml_plist = True 
+                except (OSError, PermissionError):
+                    continue
 
-    print(f"        [+] Plists processed. Log: {log_file}")
+                if is_binary or is_xml_plist:
+                    rel_path = os.path.relpath(file_path, log_dir)
+                    
+                    try:
+                        f_log.write(rel_path + "\n")
+                        f_log.flush() # Ensure it writes to disk periodically
+                        
+                        extract_embedded_plists(file_path, log_file_path, log_dir)
+
+                        if is_binary:
+                            convert_plistXML(file_path)
+                            
+                    except Exception as e:
+                        print(f"Error processing {file_path}: {e}")
+                        continue
+
+    print(f"        [+] Plists processed. Log: {log_file_path}")
 
 def convert_plistXML(file_path):
     def patch_uid(obj):
