@@ -520,6 +520,7 @@ def extension_search(search_dir, defaults):
                         continue
                 if any(file.lower().endswith(ext) for ext in extensions):
                     rel_path = os.path.relpath(os.path.join(root, file), search_dir)
+                    print(f"        [+] Found: {rel_path}")
                     f.write(rel_path + '\n')
         print(f"        [+] Extension search complete. Log: {log_file_path}")
 
